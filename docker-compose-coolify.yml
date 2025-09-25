@@ -1,0 +1,75 @@
+name: expo-updates-ota
+
+services:
+  expo-updates-ota-db:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: expo-updates-ota
+      POSTGRES_USER: $SERVICE_USER_POSTGRES
+      POSTGRES_PASSWORD: $SERVICE_PASSWORD_POSTGRES
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  server:
+    image: iambluedev/expo-updates-ota-server:latest
+    environment:
+      - SERVICE_URL_SERVER_5501
+      - DATABASE_URL=postgresql://$SERVICE_USER_POSTGRES:$SERVICE_PASSWORD_POSTGRES@expo-updates-ota-db:5432/expo-updates-ota
+      - ADMIN_WEB_URL=$SERVICE_URL_WEB
+      - BETTER_AUTH_SECRET=$SERVICE_PASSWORD_64_BETTERAUTH
+      - APP_PK_SECRET=$SERVICE_PASSWORD_64_APPPKSECRET
+      - SMTP_HOST=${SMTP_HOST}
+      - SMTP_PORT=${SMTP_PORT}
+      - SMTP_SECURE=${SMTP_SECURE}
+      - SMTP_USER=${SMTP_USER}
+      - SMTP_PASS=${SMTP_PASS}
+      - SMTP_FROM=${SMTP_FROM}
+      - S3_ENDPOINT=${S3_ENDPOINT}
+      - S3_BUCKET=${S3_BUCKET}
+      - S3_REGION=${S3_REGION}
+      - S3_ACCESS_KEY=${S3_ACCESS_KEY}
+      - S3_SECRET_KEY=${S3_SECRET_KEY}
+      - SERVER_URL=$SERVICE_URL_SERVER
+      - UPLOAD_PROVIDER=${UPLOAD_PROVIDER:-local}
+      - DISABLE_REGISTER=${DISABLE_REGISTER:-false}
+      - SERVICE_PASSWORD_ADMIN=$SERVICE_PASSWORD_ADMIN
+      - NODE_ENV=production
+    volumes:
+      - uploads:/app/uploads
+    restart: unless-stopped
+    depends_on:
+      expo-updates-ota-db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:5501/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  web:
+    image: iambluedev/expo-updates-ota-web:latest
+    environment:
+      - SERVICE_URL_WEB_8080
+      - VITE_SERVER_URL=$SERVICE_URL_SERVER
+      - NODE_ENV=production
+    restart: unless-stopped
+    depends_on:
+      - expo-updates-ota-db
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+volumes:
+  postgres_data:
+    driver: local
+  uploads:
+    driver: local

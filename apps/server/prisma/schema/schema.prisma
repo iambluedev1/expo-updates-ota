@@ -1,0 +1,186 @@
+generator client {
+  provider      = "prisma-client"
+  output        = "../generated/prisma"
+  binaryTargets = ["native", "linux-musl-arm64-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Organization {
+  id        String   @id @map("_id")
+  name      String
+  slug      String?
+  logo      String?
+  metadata  String?
+  createdAt DateTime
+
+  apps        App[]
+  members     Member[]
+  invitations Invitation[]
+
+  @@map("organization")
+}
+
+model Member {
+  id             String       @id @map("_id")
+  userId         String
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  role           String
+  createdAt      DateTime
+
+  @@map("member")
+}
+
+model Invitation {
+  id             String       @id @map("_id")
+  email          String
+  inviterId      String?
+  inviter        User?        @relation(fields: [inviterId], references: [id], onDelete: SetNull)
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  role           String
+  status         String
+  expiresAt      DateTime
+
+  @@map("invitation")
+}
+
+model App {
+  id                     String   @id @default(uuid()) @map("_id")
+  title                  String
+  slug                   String
+  signingKey             String?
+  saveDownloadStatistics Boolean  @default(false)
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  runtimes     AppRuntime[]
+  tokens       AppToken[]
+  statsEntries AppStatsEntry[]
+
+  @@unique([organizationId, slug])
+  @@map("app")
+}
+
+model AppToken {
+  id         String    @id @default(uuid()) @map("_id")
+  name       String
+  token      String    @unique
+  lastUsedAt DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  appId  String
+  app    App    @relation(fields: [appId], references: [id], onDelete: Cascade)
+
+  @@map("app_token")
+}
+
+enum Platform {
+  ios
+  android
+}
+
+model AppRuntime {
+  id             String   @id @default(uuid()) @map("_id")
+  runtimeVersion String
+  platform       Platform
+  isRollback     Boolean  @default(false)
+  channel        String   @default("production")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  appId String
+  app   App    @relation(fields: [appId], references: [id], onDelete: Cascade)
+
+  activeBuildId String? @unique
+  activeBuild   Build?  @relation("ActiveBuild", fields: [activeBuildId], references: [id])
+
+  builds Build[] @relation("RuntimeBuilds")
+
+  @@unique([appId, runtimeVersion, platform, channel])
+  @@map("app_runtime")
+}
+
+model Build {
+  id        String   @id @default(uuid()) @map("_id")
+  message   String?
+  isDraft   Boolean  @default(true)
+  metadata  Json?    @default("{}")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  appRuntimeId String
+  appRuntime   AppRuntime @relation("RuntimeBuilds", fields: [appRuntimeId], references: [id], onDelete: Cascade)
+
+  authorId String
+  author   User   @relation("BuildAuthor", fields: [authorId], references: [id], onDelete: Cascade)
+
+  activeForRuntime AppRuntime? @relation("ActiveBuild")
+
+  assets BuildAsset[]
+
+  statsEntries AppStatsEntry[]
+
+  @@map("build")
+}
+
+enum AssetType {
+  BUNDLE
+  ASSET
+}
+
+model BuildAsset {
+  id           String                @id @default(uuid()) @map("_id")
+  type         AssetType
+  filePath     String
+  originalName String?
+  extension    String?
+  contentType  String
+  fileSize     Int
+  hash         String
+  md5Key       String
+  createdAt    DateTime              @default(now())
+  updatedAt    DateTime              @updatedAt
+  destination  BuildAssetDestination @default(LOCAL)
+
+  buildId String
+  build   Build  @relation(fields: [buildId], references: [id], onDelete: Cascade)
+
+  @@map("build_asset")
+}
+
+model AppStatsEntry {
+  id               String   @id @default(uuid()) @map("_id")
+  currentUpdateId  String?
+  embeddedUpdateId String?
+  runtimeVersion   String
+  platform         String
+  channel          String
+  createdAt        DateTime @default(now())
+
+  appId String
+  app   App    @relation(fields: [appId], references: [id], onDelete: Cascade)
+
+  buildId String?
+  build   Build?  @relation(fields: [buildId], references: [id], onDelete: SetNull)
+
+  @@index([appId, createdAt])
+  @@index([buildId, createdAt])
+  @@map("app_stats_entry")
+}
+
+enum BuildAssetDestination {
+  LOCAL
+  S3
+}
